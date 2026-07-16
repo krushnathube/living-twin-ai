@@ -1,0 +1,50 @@
+# Render blueprint: one Node web service (backend) + one static site (frontend).
+# Deploy: push to GitHub, then "New +" -> "Blueprint" in Render and point at this repo.
+services:
+  - type: web
+    name: living-twin-backend
+    runtime: node
+    rootDir: backend
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.js
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: CORS_ORIGIN
+        value: "*"
+      - key: FLEET_SIZE
+        value: "50"
+      - key: AUTO_APPROVE
+        value: "true"
+      - key: JWT_SECRET
+        generateValue: true
+      # --- To persist to AWS RDS MySQL, set these (leave blank to run in-memory) ---
+      - key: DB_HOST
+        sync: false
+      - key: DB_PORT
+        value: "3306"
+      - key: DB_NAME
+        value: living_twin
+      - key: DB_USER
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      - key: DB_SSL
+        value: "true"
+
+  - type: web
+    name: living-twin-frontend
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    envVars:
+      # Point the dashboard at the deployed backend origin.
+      - key: VITE_BACKEND_URL
+        sync: false
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
