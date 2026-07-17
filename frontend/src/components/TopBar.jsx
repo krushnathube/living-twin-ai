@@ -9,8 +9,8 @@ export default function TopBar() {
   return (
     <header className="topbar">
       <div className="brand">
-        <span className="dot" />
-        <div><b>Living Twin</b> <span className="sub">SELF-HEALING FLEET COMMAND CENTER</span></div>
+        <img src="/favicon.svg" alt="" className="brand-mark" />
+        <div><b>Living Twin</b> <span className="sub">THE SELF-HEALING OPERATIONS PLATFORM</span></div>
       </div>
       <div className="title">AI Ops</div>
       <div className="kpi-strip">

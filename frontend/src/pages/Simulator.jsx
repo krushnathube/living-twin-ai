@@ -33,7 +33,10 @@ export default function Simulator() {
   return (
     <div className="sim-page">
       <div className="sim-head">
-        <div className="sim-brand"><span className="dot" /> Living Twin · Device Simulator</div>
+        <div className="sim-brand">
+          <img src="/favicon.svg" alt="" className="brand-mark" />
+          <span>Living Twin · Device Simulator</span>
+        </div>
         <Link to="/" className="sim-back">← Command Center</Link>
         <div className={`nav-live ${connected ? '' : 'off'}`}><span className="pulse" />{connected ? 'connected' : 'offline'}</div>
       </div>
