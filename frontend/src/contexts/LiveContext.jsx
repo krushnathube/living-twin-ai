@@ -96,6 +96,7 @@ export function LiveProvider({ children }) {
     inject: (faultKey, vehicleId) => post('/api/simulator/inject', { faultKey, vehicleId }),
     approve: (sessionId) => post(`/api/recovery/${sessionId}/approve`, { approvedBy: 'Booth Operator' }),
     random: (enabled) => post('/api/simulator/random', { enabled }),
+    setAutoApprove: (enabled) => post('/api/simulator/auto-approve', { enabled }),
     schedule: (body) => post('/api/simulator/schedule', body),
     getCostModel: () => fetch(`${BASE}/api/dashboard/cost-model`).then((r) => r.json()),
     updateCostModel: (patch) => post('/api/dashboard/cost-model', patch).then((r) => r.json()),

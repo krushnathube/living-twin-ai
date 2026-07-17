@@ -7,6 +7,7 @@ import aiRoutes from '../modules/ai/ai.routes.js';
 import recoveryRoutes from '../modules/recovery/recovery.routes.js';
 import simulatorRoutes from '../modules/simulator/simulator.routes.js';
 import dashboardRoutes from '../modules/dashboard/dashboard.routes.js';
+import adminRoutes from '../modules/admin/admin.routes.js';
 
 const router = Router();
 router.use('/auth', authRoutes);
@@ -16,4 +17,5 @@ router.use('/ai', aiRoutes);
 router.use('/recovery', recoveryRoutes);
 router.use('/simulator', simulatorRoutes);
 router.use('/dashboard', dashboardRoutes);
+router.use('/admin', adminRoutes);
 export default router;

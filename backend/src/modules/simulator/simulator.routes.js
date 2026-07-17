@@ -12,13 +12,17 @@ router.get('/faults', asyncHandler(async (_req, res) =>
   ok(res, { faults: faultKeys().map((k) => ({ key: k, label: FAULTS[k].label, severity: FAULTS[k].severity })) })));
 
 // GET /api/simulator/state — device control state for every vehicle (console bootstrap)
-router.get('/state', asyncHandler(async (_req, res) => ok(res, { devices: simulatorService.getState(), auto: boothLoop.auto })));
+router.get('/state', asyncHandler(async (_req, res) => ok(res, { devices: simulatorService.getState(), auto: boothLoop.auto, autoApprove: boothLoop.autoApprove })));
 
 // POST /api/simulator/inject { faultKey?, vehicleId? } — inject an AI incident
 router.post('/inject', asyncHandler(async (req, res) => {
   const { faultKey, vehicleId } = req.body || {};
   ok(res, await boothLoop.inject(faultKey, vehicleId), 'Injection requested');
 }));
+
+// POST /api/simulator/auto-approve { enabled } — toggle AI recovery approval mode
+router.post('/auto-approve', asyncHandler(async (req, res) =>
+  ok(res, boothLoop.setAutoApprove(!!(req.body && req.body.enabled)), 'Auto-approve updated')));
 
 // POST /api/simulator/random { enabled } — toggle random failures (auto loop)
 router.post('/random', asyncHandler(async (req, res) =>

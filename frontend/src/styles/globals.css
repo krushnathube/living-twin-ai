@@ -330,3 +330,6 @@ body{background:radial-gradient(1200px 700px at 70% -10%,rgba(58,214,255,.05),tr
 .grid{overflow:hidden}
 .col.right{min-height:0}
 .council{flex:1 1 0;min-height:0;height:0;overflow-y:auto}
+
+/* let the incident card grow so the council scrolls it (no inner clipping) */
+.inc-card{flex:none}

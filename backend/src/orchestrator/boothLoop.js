@@ -22,6 +22,7 @@ class BoothLoop {
     this.nextAt = 0;
     this.running = false;
     this.auto = true;          // random failures on/off
+    this.autoApprove = config.simulator.autoApprove; // runtime-toggamble approval mode
   }
 
   start() {
@@ -49,6 +50,8 @@ class BoothLoop {
   }
 
   setRandom(enabled) { this.auto = !!enabled; if (this.auto) this.nextAt = Date.now() + 1500; return { auto: this.auto }; }
+
+  setAutoApprove(enabled) { this.autoApprove = !!enabled; return { autoApprove: this.autoApprove }; }
 
   schedule(delayMs, faultKey, vehicleId) {
     setTimeout(() => { if (this.activeCount() === 0) this.openIncident(faultKey, vehicleId); }, Math.max(0, delayMs));
@@ -103,7 +106,7 @@ class BoothLoop {
 
     // Human-in-the-loop. Booth mode auto-approves after a pause; disabling it means an
     // operator must call POST /api/recovery/:sessionId/approve.
-    if (config.simulator.autoApprove) {
+    if (this.autoApprove) {
       session.autoTimer = setTimeout(() => this.approve(session.id, { approvedBy: 'auto-operator', autoApproved: true }), config.simulator.autoApproveDelayMs);
     }
   }

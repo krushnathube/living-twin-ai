@@ -15,6 +15,7 @@ export default function Simulator() {
   const { latest, fleet, api, connected } = useLive();
   const [selected, setSelected] = useState(null);
   const [randomOn, setRandomOn] = useState(true);
+  const [autoApprove, setAutoApprove] = useState(true);
   const [schedFault, setSchedFault] = useState('');
   const [schedDelay, setSchedDelay] = useState(5);
 
@@ -28,6 +29,7 @@ export default function Simulator() {
   const counts = fleet.counts || {};
 
   const toggleRandom = () => { const v = !randomOn; setRandomOn(v); api.random(v); };
+  const toggleAuto = () => { const v = !autoApprove; setAutoApprove(v); api.setAutoApprove(v); };
   const doSchedule = () => api.schedule({ delayMs: schedDelay * 1000, faultKey: schedFault || undefined, kind: 'incident' });
 
   return (
@@ -59,6 +61,14 @@ export default function Simulator() {
               <span className="knob" />{randomOn ? 'ON — auto-injecting' : 'OFF'}
             </button>
             <p className="hint-sm">When on, the fleet develops incidents on its own and the AI council heals them.</p>
+          </div>
+
+          <div className="ctl-block">
+            <div className="ctl-label">Recovery approval</div>
+            <button className={`toggle ${autoApprove ? 'on' : ''}`} onClick={toggleAuto}>
+              <span className="knob" />{autoApprove ? 'AUTO-APPROVE' : 'MANUAL · wait for user'}
+            </button>
+            <p className="hint-sm">When off, each incident waits at "awaiting approval" until you click ✓ Approve on the Command Center.</p>
           </div>
 
           <div className="ctl-block">
