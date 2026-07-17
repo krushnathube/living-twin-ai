@@ -8,6 +8,7 @@ import { bus } from '../utils/bus.js';
 import { fleetService } from '../modules/fleet/fleet.service.js';
 import { telemetryService } from '../modules/telemetry/telemetry.service.js';
 import { metricsService } from '../modules/dashboard/metrics.service.js';
+import { incidentLog } from '../modules/dashboard/incidentLog.service.js';
 
 export function initSocket(httpServer) {
   const io = new Server(httpServer, { cors: { origin: config.corsOrigin, methods: ['GET', 'POST'] } });
@@ -17,6 +18,7 @@ export function initSocket(httpServer) {
     socket.emit(SOCKET_EVENTS.FLEET_SNAPSHOT, fleetService.snapshot());
     socket.emit(SOCKET_EVENTS.METRICS, metricsService.snapshot());
     socket.emit(SOCKET_EVENTS.TELEMETRY, telemetryService.snapshotLatest());
+    socket.emit(SOCKET_EVENTS.INCIDENTS, incidentLog.list());
     socket.on('disconnect', () => logger.info('client disconnected', { id: socket.id }));
   });
 

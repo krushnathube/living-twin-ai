@@ -1,5 +1,6 @@
 import React from 'react';
 import { useLive } from '../contexts/LiveContext.jsx';
+import HealthTrend from './HealthTrend.jsx';
 
 export default function TelemetryFeed() {
   const { feed, latest, fleet } = useLive();
@@ -14,6 +15,7 @@ export default function TelemetryFeed() {
         <Cell lab="Avg signal" val={`${avg('signalStrength').toFixed(0)}%`} cls="good" />
         <Cell lab="Vehicles" val={fleet.total || 0} />
       </div>
+      <HealthTrend />
       <div className="feed">
         {feed.map((f, i) => (
           <div key={i} className={`feed-row ${f.level || ''}`}>

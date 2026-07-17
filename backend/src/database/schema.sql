@@ -2,6 +2,10 @@
 -- Sequelize sync() creates these automatically; this file is for manual provisioning/review.
 -- All tables carry created_at, updated_at; soft-deletable tables also carry deleted_at.
 
+-- Create/select the database (RDS users often create the DB via the console instead):
+CREATE DATABASE IF NOT EXISTS hm_living_twin_ai CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE hm_living_twin_ai;
+
 CREATE TABLE IF NOT EXISTS roles (
   id VARCHAR(24) PRIMARY KEY, `key` VARCHAR(32) UNIQUE, name VARCHAR(64), description VARCHAR(160),
   created_at DATETIME, updated_at DATETIME

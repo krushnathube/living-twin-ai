@@ -11,14 +11,17 @@ import { councilService } from '../modules/ai/council.service.js';
 import { recoveryService } from '../modules/recovery/recovery.service.js';
 import { metricsService } from '../modules/dashboard/metrics.service.js';
 import { telemetryService } from '../modules/telemetry/telemetry.service.js';
+import { incidentLog } from '../modules/dashboard/incidentLog.service.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 class BoothLoop {
   constructor() {
     this.sessions = new Map();  // sessionId -> session
+    this.byVehicle = new Map(); // vehicleId -> sessionId
     this.nextAt = 0;
     this.running = false;
+    this.auto = true;          // random failures on/off
   }
 
   start() {
@@ -33,26 +36,34 @@ class BoothLoop {
 
   async tick() {
     if (!this.running) return;
-    if (this.activeCount() === 0 && Date.now() >= this.nextAt) {
+    if (this.auto && this.activeCount() === 0 && Date.now() >= this.nextAt) {
       await this.openIncident();
     }
     setTimeout(() => this.tick(), 500);
   }
 
   // Manually inject a fault (used by the simulator API). faultKey optional.
-  async inject(faultKey) {
+  async inject(faultKey, vehicleId) {
     if (this.activeCount() > 0) return { skipped: true, reason: 'incident in progress' };
-    return this.openIncident(faultKey);
+    return this.openIncident(faultKey, vehicleId);
   }
 
-  async openIncident(forcedKey) {
+  setRandom(enabled) { this.auto = !!enabled; if (this.auto) this.nextAt = Date.now() + 1500; return { auto: this.auto }; }
+
+  schedule(delayMs, faultKey, vehicleId) {
+    setTimeout(() => { if (this.activeCount() === 0) this.openIncident(faultKey, vehicleId); }, Math.max(0, delayMs));
+    return { scheduled: true, inMs: delayMs, faultKey: faultKey || 'random', vehicleId: vehicleId || 'random' };
+  }
+
+  async openIncident(forcedKey, forcedVehicleId) {
     const faultKey = forcedKey && FAULTS[forcedKey] ? forcedKey : pick(faultKeys());
     const fault = FAULTS[faultKey];
-    const candidates = fleetService.healthyVehicles();
-    const vehicle = pick(candidates.length ? candidates : fleetService.all());
+    let vehicle = forcedVehicleId ? fleetService.get(forcedVehicleId) : null;
+    if (!vehicle) { const candidates = fleetService.healthyVehicles(); vehicle = pick(candidates.length ? candidates : fleetService.all()); }
     const sessionId = id('SESS');
 
     simulatorService.registerIncident(vehicle.id, faultKey);
+    this.byVehicle.set(vehicle.id, sessionId);
     fleetService.setHealth(vehicle.id, fault.severity === 'critical' ? HEALTH.CRITICAL : HEALTH.WARNING, sessionId);
 
     const session = {
@@ -77,6 +88,7 @@ class BoothLoop {
     const ctx = { faultKey: session.faultKey, faultTelemetry: session.faultTelemetry, latest: telemetryService.getLatest(session.vehicleId) };
     const { results, synthesis } = await councilService.diagnose(ctx);
     session.synthesis = synthesis;
+    session.results = results;
 
     // Stream each specialist finding with a short delay so the council looks "live".
     for (const r of results) {
@@ -105,17 +117,32 @@ class BoothLoop {
     const record = await recoveryService.execute(session, { approvedBy, autoApproved });
     session.status = INCIDENT_STATUS.RESOLVED;
 
-    bus.emit('incident:healed', {
+    const syn = session.synthesis || {};
+    const healedItem = {
       sessionId, vehicleId: session.vehicleId, durationSeconds: record.durationSeconds,
-      approvedBy, autoApproved, faultLabel: session.faultLabel,
-    });
+      approvedBy, autoApproved, faultLabel: session.faultLabel, severity: session.severity, at: Date.now(),
+      rootCause: syn.rootCause, recommendedAction: syn.recommendedAction, riskNote: syn.riskNote,
+      confidence: syn.confidence, riskScore: syn.riskScore, mttrEstimate: syn.mttrEstimate,
+      businessImpact: syn.businessImpact, engine: syn.engine, anomalyScore: session.anomalyScore,
+      agents: (session.results || []).map((r) => ({ agentName: r.agentName, finding: r.finding })),
+    };
+    incidentLog.push(healedItem);
+    bus.emit('incident:healed', healedItem);
     metricsService.onResolved(record.durationSeconds, session.severity);
     metricsService.setActiveIncidents(this.activeCount());
 
     // schedule the next incident and retire this session
     this.nextAt = Date.now() + ri(config.simulator.incidentMinGapMs, config.simulator.incidentMaxGapMs);
+    this.byVehicle.delete(session.vehicleId);
     setTimeout(() => this.sessions.delete(sessionId), 5000);
     return { ok: true, record };
+  }
+
+  async recoverVehicle(vehicleId, opts = {}) {
+    const sid = this.byVehicle.get(vehicleId);
+    if (sid) return this.approve(sid, { approvedBy: opts.approvedBy || 'operator', autoApproved: false });
+    simulatorService.clearDevice(vehicleId); // no AI session: just clear console-driven state
+    return { ok: true, cleared: true };
   }
 
   getSession(id) { return this.sessions.get(id) || null; }

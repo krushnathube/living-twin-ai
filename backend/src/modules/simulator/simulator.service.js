@@ -1,12 +1,21 @@
-// Realistic IoT telemetry simulator. Every tick it emits a plausible sample for each
-// vehicle: healthy baselines with light noise, or fault-driven drift when the vehicle
-// is under an active incident. This imitates a real device fleet publishing to MQTT.
+// Realistic IoT telemetry simulator. Imitates a fleet of connected devices publishing
+// a rich telemetry frame every few seconds. The simulator OWNS each vehicle's health
+// each tick, derived from: manual mode override -> healing window -> active AI incident
+// -> manual device fault -> live thresholds (so console sliders actually drive state).
 import { config } from '../../config/index.js';
 import { HEALTH } from '../../constants/index.js';
 import { bus } from '../../utils/bus.js';
 import { rnd, ri, round, pick } from '../../utils/random.js';
 import { fleetService } from '../fleet/fleet.service.js';
 import { FAULTS } from './faultProfiles.js';
+
+// Fault -> device fault code shown on the console (SPN-style codes for realism).
+const FAULT_CODES = { BATTERY: 'BMS-P0A80', MOTOR: 'MOT-P0C49', CONNECT: 'NET-U029A',
+  SENSOR: 'TLM-U0101', BRAKE: 'BRK-C1095', TIRE: 'TPMS-C0750' };
+
+const WEATHER = ['clear', 'rain', 'heat', 'storm', 'fog'];
+const ROADS = ['smooth', 'urban', 'rough', 'incline', 'highway'];
+const TRIPS = ['idle', 'en_route', 'charging', 'maintenance'];
 
 const FEED_LINES = [
   () => 'telemetry sync ok · pack balanced',
@@ -18,75 +27,177 @@ const FEED_LINES = [
   () => 'geofence ok · on corridor',
 ];
 
-// Baseline healthy sample for a vehicle.
-function healthySample(v) {
+// A full healthy device frame.
+function healthyFrame(v) {
+  const charging = Math.random() < 0.15;
   return {
     vehicleId: v.id,
+    // energy
     batterySoc: round(rnd(45, 95)),
-    batteryVoltage: round(rnd(350, 400), 1),
+    batteryVoltage: round(rnd(360, 400), 1),
     batteryCurrent: round(rnd(40, 120)),
     packTemp: round(rnd(28, 42)),
-    motorTemp: round(rnd(45, 75)),
+    chargingState: charging ? 'charging' : 'discharging',
+    powerConsumptionKw: round(rnd(8, 34), 1),
+    // drivetrain / motion
+    motorTemp: round(rnd(45, 78)),
     cabinTemp: round(rnd(21, 26)),
-    speed: round(v.speed),
+    speed: round(charging ? 0 : rnd(0, 62)),
+    acceleration: round(rnd(-1.5, 1.8), 2),
+    // location
+    lat: round(v.lat, 5),
+    lng: round(v.lng, 5),
+    heading: round(v.heading),
+    gpsSats: ri(9, 14),
+    // connectivity
+    connectivity: 'online',
+    network: pick(['4G', '5G-NSA', '5G']),
     signalStrength: round(rnd(60, 95)),
     packetLoss: round(rnd(0, 2)),
+    // compute
+    cpu: round(rnd(12, 45)),
+    memory: round(rnd(30, 62)),
+    // status
+    sensorStatus: 'ok',
+    doorStatus: charging ? 'open' : 'closed',
     tyrePsi: round(rnd(32, 36)),
+    tripStatus: charging ? 'charging' : pick(['idle', 'en_route', 'en_route']),
+    // environment
+    weatherImpact: pick(WEATHER),
+    roadCondition: pick(ROADS),
+    // rollups
+    alerts: [],
+    faultCodes: [],
     healthScore: round(rnd(96, 100)),
+    stale: false,
+    ts: Date.now(),
   };
 }
 
-// Blend fault telemetry into the sample for a vehicle under incident.
-function applyFault(sample, incident) {
-  const f = FAULTS[incident.faultKey];
-  const d = incident.telemetry;
-  const merged = { ...sample };
-  if (d.packTemp) merged.packTemp = d.packTemp;
-  if (d.batteryVoltage) merged.batteryVoltage = d.batteryVoltage;
-  if (d.batteryCurrent) merged.batteryCurrent = d.batteryCurrent;
-  if (d.motorTemp) merged.motorTemp = d.motorTemp;
-  if (d.signalStrength) merged.signalStrength = d.signalStrength;
-  if (d.packetLoss) merged.packetLoss = d.packetLoss;
-  if (d.tyrePsi) merged.tyrePsi = d.tyrePsi;
-  merged.healthScore = round(incident.severity === 'critical' ? rnd(38, 62) : rnd(66, 82));
-  merged.faultKey = incident.faultKey;
-  return merged;
+// Blend a fault's telemetry signature into the frame + attach an alert/fault code.
+function applyFault(frame, faultKey) {
+  const f = FAULTS[faultKey];
+  const d = f.telemetry();
+  const m = { ...frame };
+  if (d.packTemp) m.packTemp = d.packTemp;
+  if (d.batteryVoltage) m.batteryVoltage = d.batteryVoltage;
+  if (d.batteryCurrent) m.batteryCurrent = d.batteryCurrent;
+  if (d.motorTemp) { m.motorTemp = d.motorTemp; m.cabinTemp = round(m.cabinTemp + rnd(2, 5)); }
+  if (d.signalStrength != null) { m.signalStrength = d.signalStrength; m.connectivity = 'degraded'; }
+  if (d.packetLoss != null) m.packetLoss = d.packetLoss;
+  if (d.tyrePsi) m.tyrePsi = d.tyrePsi;
+  if (faultKey === 'SENSOR') m.sensorStatus = 'fault';
+  if (faultKey === 'CONNECT') { m.connectivity = 'degraded'; m.network = d.net || m.network; }
+  m.powerConsumptionKw = round(m.powerConsumptionKw + rnd(3, 9), 1);
+  m.faultCodes = [FAULT_CODES[faultKey]];
+  m.alerts = [{ severity: f.severity, code: FAULT_CODES[faultKey], message: f.label }];
+  m.healthScore = round(f.severity === 'critical' ? rnd(34, 60) : rnd(64, 82));
+  m.faultKey = faultKey;
+  return m;
+}
+
+// Live thresholds so console sliders (pinned fields) can push a device into warn/critical.
+function bandFromFrame(s) {
+  if (s.packTemp >= 60 || s.motorTemp >= 112 || s.batteryVoltage <= 300 || s.tyrePsi <= 26 || s.healthScore <= 55)
+    return HEALTH.CRITICAL;
+  if (s.packTemp >= 48 || s.motorTemp >= 92 || s.signalStrength <= 25 || s.packetLoss >= 15 || s.tyrePsi <= 30 || s.healthScore <= 82)
+    return HEALTH.WARNING;
+  return HEALTH.HEALTHY;
 }
 
 class SimulatorService {
-  constructor() { this.timer = null; this.activeIncidents = new Map(); } // vehicleId -> incident meta
-
-  registerIncident(vehicleId, faultKey) {
-    const f = FAULTS[faultKey];
-    this.activeIncidents.set(vehicleId, { faultKey, severity: f.severity, telemetry: f.telemetry() });
+  constructor() {
+    this.timer = null;
+    this.activeIncidents = new Map();   // vehicleId -> faultKey (driven by AI orchestrator)
+    this.device = new Map();            // vehicleId -> { mode, overrides, fault } (console-driven)
+    this.healingUntil = new Map();      // vehicleId -> ts
+    this.deviceSchedules = [];          // [{ at, vehicleId, faultKey }]
   }
+
+  dev(id) { if (!this.device.has(id)) this.device.set(id, { mode: null, overrides: {}, fault: null }); return this.device.get(id); }
+
+  // --- AI-orchestrator hooks ---
+  registerIncident(vehicleId, faultKey) { this.activeIncidents.set(vehicleId, faultKey); }
   clearIncident(vehicleId) { this.activeIncidents.delete(vehicleId); }
+  markHealing(vehicleId, ms = 1400) { this.healingUntil.set(vehicleId, Date.now() + ms); }
 
-  start() {
-    if (this.timer) return;
-    this.timer = setInterval(() => this.tick(), config.simulator.intervalMs);
-  }
+  // --- Console controls ---
+  setMode(id, mode) { const d = this.dev(id); d.mode = mode === 'auto' || mode === 'clear' ? null : mode; if (d.mode !== HEALTH.OFFLINE) {} return d; }
+  setOverride(id, field, value) { const d = this.dev(id); if (value === null || value === undefined || value === '') delete d.overrides[field]; else d.overrides[field] = Number(value); return d; }
+  clearOverrides(id) { this.dev(id).overrides = {}; }
+  setDeviceFault(id, faultKey) { const d = this.dev(id); d.fault = FAULTS[faultKey] ? faultKey : null; return d; }
+  clearDevice(id) { const d = this.dev(id); d.mode = null; d.overrides = {}; d.fault = null; this.activeIncidents.delete(id); this.markHealing(id); }
+  scheduleDeviceFault(vehicleId, faultKey, delayMs) { this.deviceSchedules.push({ at: Date.now() + delayMs, vehicleId, faultKey }); }
+
+  start() { if (this.timer) return; this.timer = setInterval(() => this.tick(), config.simulator.intervalMs); }
   stop() { clearInterval(this.timer); this.timer = null; }
 
   tick() {
     fleetService.move();
+    const now = Date.now();
+
+    // fire due device-level scheduled faults
+    for (const s of this.deviceSchedules.filter((x) => now >= x.at)) this.setDeviceFault(s.vehicleId, s.faultKey);
+    this.deviceSchedules = this.deviceSchedules.filter((x) => now < x.at);
+
     const batch = [];
     for (const v of fleetService.all()) {
-      if (v.health === HEALTH.OFFLINE) continue;
-      let sample = healthySample(v);
-      const inc = this.activeIncidents.get(v.id);
-      if (inc) sample = applyFault(sample, inc);
-      sample.ts = Date.now();
-      batch.push(sample);
-    }
-    // Emit a batched telemetry event (socket layer forwards; persistence writes).
-    bus.emit('telemetry:batch', batch);
+      const d = this.dev(v.id);
+      let frame = healthyFrame(v);
 
-    // Occasional ambient feed line (healthy chatter) from a random vehicle.
+      // 1) active AI incident drift
+      const incFault = this.activeIncidents.get(v.id);
+      if (incFault) frame = applyFault(frame, incFault);
+      // 2) console device fault drift
+      else if (d.fault) frame = applyFault(frame, d.fault);
+
+      // 3) manual field overrides (sliders) win
+      for (const [k, val] of Object.entries(d.overrides)) frame[k] = val;
+
+      // 4) offline handling
+      const healing = (this.healingUntil.get(v.id) || 0) > now;
+      let health;
+      if (d.mode === HEALTH.OFFLINE) {
+        health = HEALTH.OFFLINE;
+        frame.connectivity = 'offline'; frame.signalStrength = 0; frame.packetLoss = 100;
+        frame.tripStatus = 'offline'; frame.speed = 0; frame.stale = true; frame.healthScore = 0;
+        frame.alerts = [{ severity: 'critical', code: 'NET-OFFLINE', message: 'Device unreachable' }];
+        frame.faultCodes = ['NET-OFFLINE'];
+      } else if (d.mode) {
+        health = d.mode;               // forced band
+      } else if (healing) {
+        health = HEALTH.HEALING;
+      } else if (incFault || d.fault) {
+        health = (FAULTS[incFault || d.fault].severity === 'critical') ? HEALTH.CRITICAL : HEALTH.WARNING;
+      } else {
+        health = bandFromFrame(frame); // threshold-driven (sliders)
+      }
+
+      // decorate alerts for forced/threshold bands without an explicit fault
+      if (!frame.alerts.length && (health === HEALTH.WARNING || health === HEALTH.CRITICAL)) {
+        frame.alerts = [{ severity: health === HEALTH.CRITICAL ? 'critical' : 'warning', code: 'THRESH', message: 'Telemetry threshold breach' }];
+        frame.faultCodes = ['THRESH'];
+      }
+
+      frame.health = health;
+      fleetService.setHealth(v.id, health, incFault ? v.incidentId : v.incidentId);
+      if (health !== HEALTH.OFFLINE) batch.push(frame);
+      else batch.push(frame); // still emit offline frame so console shows it
+    }
+
+    bus.emit('telemetry:batch', batch);
     if (Math.random() < 0.9) {
       const v = pick(fleetService.all());
-      bus.emit('feed', { level: 'ok', vehicleId: v.id, text: pick(FEED_LINES)() });
+      bus.emit('feed', { level: 'ok', vehicleId: v.id, text: pick(FEED_LINES)(), ts: Date.now() });
     }
+  }
+
+  // Snapshot of device control state (for the console on load).
+  getState() {
+    return fleetService.all().map((v) => {
+      const d = this.dev(v.id);
+      return { vehicleId: v.id, model: v.model, mode: d.mode, fault: d.fault, overrides: d.overrides, health: v.health };
+    });
   }
 }
 

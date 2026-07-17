@@ -1,6 +1,7 @@
 // Aggregate operational metrics shown on the dashboard. Updated on every resolution.
 import { bus } from '../../utils/bus.js';
 import { fleetService } from '../fleet/fleet.service.js';
+import { costModel } from './costModel.service.js';
 
 class MetricsService {
   constructor() {
@@ -8,7 +9,7 @@ class MetricsService {
       mttrSeconds: 8.4,
       faultsDiagnosed: 1204,
       failuresPrevented: 37,
-      costAvoidedCr: 1.24,   // ₹ crore (illustrative baseline — replace with real figure)
+      costAvoidedUsdM: 1.24, // USD millions (illustrative baseline — replace with a real figure)
       activeIncidents: 0,
       fleetHealthPct: 98.4,
     };
@@ -18,7 +19,6 @@ class MetricsService {
     this.state.faultsDiagnosed += 1;
     if (severity === 'critical') this.state.failuresPrevented += 1;
     this.state.mttrSeconds = +(this.state.mttrSeconds * 0.8 + durationSeconds * 0.2).toFixed(1);
-    this.state.costAvoidedCr = +(this.state.costAvoidedCr + (severity === 'critical' ? 0.03 : 0.01)).toFixed(2);
     this.recomputeFleetHealth();
     this.emit();
   }
@@ -33,7 +33,11 @@ class MetricsService {
   }
 
   emit() { bus.emit('metrics', this.snapshot()); }
-  snapshot() { this.recomputeFleetHealth(); return { ...this.state }; }
+  snapshot() {
+    this.recomputeFleetHealth();
+    this.state.costAvoidedUsdM = costModel.compute().costAvoidedUsdM; // derived, not a counter
+    return { ...this.state };
+  }
 }
 
 export const metricsService = new MetricsService();

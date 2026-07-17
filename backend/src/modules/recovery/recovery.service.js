@@ -13,15 +13,11 @@ class RecoveryService {
     const v = fleetService.get(session.vehicleId);
     if (!v) return null;
 
-    fleetService.setHealth(session.vehicleId, HEALTH.HEALING, session.id);
     simulatorService.clearIncident(session.vehicleId);
+    simulatorService.clearDevice(session.vehicleId); // clear any console overrides on heal
+    simulatorService.markHealing(session.vehicleId, 1600); // simulator owns the heal->healthy transition
 
     const durationSeconds = Math.max(2.1, (Date.now() - session.t0) / 1000);
-
-    // Settle back to healthy shortly after applying the fix (visual heal window).
-    setTimeout(() => {
-      fleetService.setHealth(session.vehicleId, HEALTH.HEALTHY, null);
-    }, 1400);
 
     const record = {
       sessionId: session.id, vehicleId: session.vehicleId,

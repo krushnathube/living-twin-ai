@@ -26,7 +26,7 @@ services:
       - key: DB_PORT
         value: "3306"
       - key: DB_NAME
-        value: living_twin
+        value: hm_living_twin_ai
       - key: DB_USER
         sync: false
       - key: DB_PASSWORD

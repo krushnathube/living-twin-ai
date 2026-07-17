@@ -50,8 +50,33 @@ cd backend && npm install && npm start
 cd frontend && npm install && npm run dev
 ```
 
-Open http://localhost:5173. The fleet turns over on its own; use the bottom buttons to
-inject a specific scenario for judges.
+Open http://localhost:5173. Two pages:
+- **Command Center** (`/`) — the live self-healing dashboard.
+- **Device Simulator** (`/simulator`) — a device console: per-vehicle telemetry (battery,
+  motor, GPS, connectivity, CPU/memory, sensors, doors, charging, power, trip, weather,
+  road, fault codes), health-mode overrides, telemetry sliders you can drag until a device
+  faults, manual/scheduled/random failure injection, AI-council trigger, and recovery.
+
+## Database bootstrap (SQL scripts)
+
+Two scripts live in `backend/src/database/`:
+
+- `schema.sql` — creates the `hm_living_twin_ai` database + all 26 tables (run first).
+- `seed.sql`   — reference data (roles, permissions, demo users, the 8 agents, recovery
+  actions, simulator profiles, settings). Idempotent; safe to re-run.
+
+```bash
+# 1) provision schema
+mysql -h <rds-endpoint> -u <user> -p < backend/src/database/schema.sql
+# 2) load reference data
+mysql -h <rds-endpoint> -u <user> -p hm_living_twin_ai < backend/src/database/seed.sql
+```
+
+There are no versioned migration files yet — the app uses Sequelize `sync({ alter: true })`
+to create/update tables automatically. That's fine for the PoC; for production, switch off
+auto-sync and adopt migrations (sequelize-cli or umzug). The `users.password_hash` values in
+`seed.sql` are placeholders — replace with real bcrypt hashes before enabling DB-backed auth
+(the current demo login uses in-code users, not these rows).
 
 ## Database — optional by design
 
@@ -115,6 +140,14 @@ GET  /api/ai/agents                specialist council roster
 GET  /api/ai/sessions              active diagnostic sessions
 POST /api/simulator/inject         { faultKey? }  inject an incident
 GET  /api/simulator/faults         available scenarios
+GET  /api/simulator/state          per-device control state (console bootstrap)
+POST /api/simulator/random         { enabled }  toggle random failures
+POST /api/simulator/schedule       { delayMs, faultKey?, vehicleId?, kind? }
+POST /api/simulator/device/:id/mode      { mode }  healthy|warning|critical|offline|auto
+POST /api/simulator/device/:id/override  { field, value } | { clear:true }  (sliders)
+POST /api/simulator/device/:id/fault     { faultKey }  simulator drift, no AI
+POST /api/simulator/device/:id/incident  { faultKey? }  trigger AI council on device
+POST /api/simulator/device/:id/recover   heal this device
 POST /api/recovery/:sessionId/approve   human approval → heal
 GET  /api/dashboard/metrics        headline KPIs
 GET  /api/dashboard/overview       metrics + fleet + active sessions

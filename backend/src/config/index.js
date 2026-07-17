@@ -18,7 +18,7 @@ export const config = {
   db: {
     host: process.env.DB_HOST || '',
     port: int(process.env.DB_PORT, 3306),
-    name: process.env.DB_NAME || 'living_twin',
+    name: process.env.DB_NAME || 'hm_living_twin_ai',
     user: process.env.DB_USER || 'root',
     password: process.env.DB_PASSWORD || '',
     ssl: bool(process.env.DB_SSL, true),
@@ -32,12 +32,12 @@ export const config = {
     incidentMinGapMs: int(process.env.INCIDENT_MIN_GAP_MS, 7000),
     incidentMaxGapMs: int(process.env.INCIDENT_MAX_GAP_MS, 13000),
     autoApprove: bool(process.env.AUTO_APPROVE, true),
-    autoApproveDelayMs: int(process.env.AUTO_APPROVE_DELAY_MS, 3000),
+    autoApproveDelayMs: int(process.env.AUTO_APPROVE_DELAY_MS, 6000),
   },
 
   llm: {
     apiKey: process.env.LLM_API_KEY || '',
-    model: process.env.LLM_MODEL || 'claude-sonnet-4-6',
+    model: process.env.LLM_MODEL || 'claude-sonnet-5',
     enabled: !!(process.env.LLM_API_KEY && process.env.LLM_API_KEY.trim()),
   },
 };

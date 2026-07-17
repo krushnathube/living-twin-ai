@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useLive } from '../contexts/LiveContext.jsx';
 
 export default function TopBar() {
-  const { metrics, fleet, connected } = useLive();
+  const { metrics, fleet, connected, theme, toggleTheme } = useLive();
   const [clock, setClock] = useState('--:--:--');
   useEffect(() => { const t = setInterval(() => setClock(new Date().toLocaleTimeString('en-GB')), 1000); return () => clearInterval(t); }, []);
   const c = fleet.counts || {};
@@ -20,6 +20,7 @@ export default function TopBar() {
         <Kpi k="Operator ratio" v={metrics.operatorRatio || `1 : ${fleet.total || 0}`} />
         <div className={`live ${connected ? '' : 'off'}`}><span className="pulse" />{connected ? 'LIVE' : 'OFFLINE'}</div>
         <div className="clock">{clock}</div>
+        <button className="theme-btn" onClick={toggleTheme} title="Toggle light / dark">{theme === 'dark' ? '☀' : '☾'}</button>
       </div>
     </header>
   );

@@ -25,6 +25,7 @@ export const SOCKET_EVENTS = Object.freeze({
   AWAIT_APPROVAL: 'incident:await_approval',
   HEALED: 'incident:healed',
   METRICS: 'metrics:update',
+  INCIDENTS: 'incidents:snapshot',
 });
 
 export const ROLES = Object.freeze({ ADMIN: 'admin', OPERATOR: 'operator', VIEWER: 'viewer' });
